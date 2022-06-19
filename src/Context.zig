@@ -5,6 +5,18 @@ const Room = @import("Room.zig");
 const Game = @import("Game.zig");
 const utils = @import("utils.zig");
 
+const wordlist = blk: {
+    @setEvalBranchQuota(21000);
+    const wordlist_raw = @embedFile("../resources/wordlist.txt");
+    var iterator = std.mem.tokenize(u8, wordlist_raw, " \t\n\x00");
+    var lugar: [256][]const u8 = undefined;
+    var index: usize = 0;
+    while (iterator.next()) |word| : (index += 1) {
+        lugar[index] = word;
+    }
+    break :blk lugar[0..index];
+};
+
 const Context = @This();
 // TODO have list of words in a file and append it here, also separate it into lines and make a list of those
 
@@ -177,8 +189,10 @@ pub fn startGame(self: *Context, room: *Room, requester: *const Player) !void {
         members_game.appendAssumeCapacity(p.?);
     }
     members_game.appendAssumeCapacity(room.creator);
-    // TODO get word from wordlist make it upper always
-    var game = try Game.init(self.allocator, "HELLOWORLD", members_game.items, life_amount);
+
+    var rng = std.rand.DefaultPrng.init(@bitCast(u64, std.time.timestamp()));
+    const random_word = wordlist[rng.random().int(usize) % wordlist.len];
+    var game = try Game.init(self.allocator, random_word, members_game.items, life_amount);
     try self.matches.append(game);
     try utils.notifyEvent(self.allocator, members_game.items, "GameStarted", game.data());
     self.removeRoom(room); // room has made its task so it should be deleted

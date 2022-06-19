@@ -38,11 +38,11 @@ pub fn guessLetter(self: *Game, player: *const Player, guessed: u8) !void {
     var current_entry = self.players.unmanaged.entries.get(self.current_index);
     if (current_entry.key != player) return error.InvalidPlay;
 
-    if (std.mem.indexOfScalar(u8, self.letters[0..self.guessed_count], guessed)) |_| {
+    if (std.ascii.indexOfIgnoreCase(self.letters[0..self.guessed_count], &.{guessed})) |_| {
         return error.LetterAlreadyGuessed;
     }
 
-    if (std.mem.indexOfScalar(u8, self.word, guessed) == null) {
+    if (std.ascii.indexOfIgnoreCase(self.word, &.{guessed}) == null) {
         self.decrementPlayerLife();
     }
     self.letters[self.guessed_count] = guessed;
@@ -55,11 +55,11 @@ pub fn guessWord(self: *Game, player: *const Player, guessed: []const u8) !void 
     var current_entry = self.players.unmanaged.entries.get(self.current_index);
     if (current_entry.key != player) return error.InvalidPlay;
 
-    if (std.mem.eql(u8, self.word, guessed)) {
+    if (std.ascii.eqlIgnoreCase(self.word, guessed)) {
         // populate guessed letters with remaining_letters
         for (guessed) |g| {
-            if (std.mem.indexOfScalar(u8, self.letters[0..self.guessed_count], g) == null) {
-                self.letters[self.guessed_count] = g;
+            if (std.ascii.indexOfIgnoreCase(self.letters[0..self.guessed_count], &.{g}) == null) {
+                self.letters[self.guessed_count] = std.ascii.toUpper(g);
                 self.guessed_count += 1;
             }
         }
@@ -89,7 +89,7 @@ fn decrementPlayerLife(self: *Game) void {
 
 fn hiddenWord(self: *Game) []const u8 {
     for (self.word) |letter, index| {
-        if (std.mem.indexOfScalar(u8, self.letters[0..self.guessed_count], std.ascii.toUpper(letter))) |_| {
+        if (std.ascii.indexOfIgnoreCase(self.letters[0..self.guessed_count], &.{letter})) |_| {
             self.buffer_word_out[index] = std.ascii.toUpper(letter);
         } else {
             self.buffer_word_out[index] = ' ';
