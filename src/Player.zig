@@ -6,16 +6,15 @@ const Player = @This();
 // owner
 name: []const u8,
 uid: [utils.uid_size]u8,
-// notify_address: std.net.Address,
-// TODO implement later and analyze a good way of doing it
-// password: []const u8 = "",
+conn: *const std.net.StreamServer.Connection,
 
-pub fn init(name: []const u8) Player {
+pub fn init(name: []const u8, conn: *const std.net.StreamServer.Connection) Player {
     var uid = std.mem.zeroes([utils.uid_size]u8);
     utils.genUID(&uid);
-    return .{ .name = name, .uid = uid };
+    return .{ .name = name, .uid = uid, .conn = conn };
 }
 
 pub fn deinit(self: *Player, allocator: std.mem.Allocator) void {
     allocator.free(self.name);
+    self.conn.stream.close();
 }

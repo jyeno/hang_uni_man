@@ -18,13 +18,13 @@ If player guess word wrong then he loses, if he guess it right he wins
 
  * `user register player_name` register a player, checks if `player_name` is unique and returns a `player_uuid`
  * `user logout player_uuid` unregister a player
- * `room create room_name player_uuid D` returns the `room_uuid` the difficulty is defined by `D`, the creator is automatically inserted into the room
+ * `room create room_name player_uuid difficulty` returns the `room_uuid` the difficulty is defined by `D`, the creator is automatically inserted into the room
  * `room exit room_uuid player_uuid` player exist the room, if it is the creator then the room is deleted
  * `room list all` returns all the available rooms waiting
  * `room join room_uuid player_uuid` join given room
- * `room kick room_uuid player_index` creator can kick player at player_index
- * `room set_difficulty room_uuid D` creator can set the game difficulty
- * `room start room_uuid` creator of the room starts a game, notify the players that the game started `game_uuid`
+ * `room send_msg room_uuid player_uuid message` player sends message to all players in given room
+ * `room kick room_uuid player_uuid player_index` creator can kick player at player_index
+ * `room start_game room_uuid player_uuid` creator of the room starts a game, notify the players that the game started `game_uuid`
  * `game guess_letter game_uuid player_uuid L` player guess letter `L`, if successful continues to play, otherwise loses a life and another player gets his chance
  * `game guess_word game_uuid player_uuid WORD` player guess the `WORD`, if successful player wins, otherwise loses all his tries and stays as spectator
 

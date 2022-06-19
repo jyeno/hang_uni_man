@@ -1,13 +1,12 @@
 const std = @import("std");
+const Player = @import("Player.zig");
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 pub const uid_size = 16;
 
 pub const Event = enum {
-    PlayerGroupChanged,
-    LetterGuessed,
-    WordGuessed,
-    CurrentPlayerChanged,
+    // WordGuessed,
+    GameFinished,
 };
 
 pub fn genUID(buffer: *[uid_size]u8) void {
@@ -18,7 +17,7 @@ pub fn genUID(buffer: *[uid_size]u8) void {
     }
 }
 
-// TODO analise the size, if less than 256 bytes, probably we could have a non-allocating jsonSendSmall
+// TODO use mix of allocator and stack
 pub fn sendJson(
     allocator: std.mem.Allocator,
     conn: *const std.net.StreamServer.Connection,
@@ -29,17 +28,18 @@ pub fn sendJson(
 
     try std.json.stringify(data, .{}, list.writer());
 
+    std.debug.print("connection: {}\n", .{conn});
     _ = try conn.stream.write(list.items);
 }
 
 /// Notifies the address with `data` and Event
-pub fn notifier(
+pub fn notifyEvent(
     allocator: std.mem.Allocator,
-    subs: []*const std.net.StreamServer.Connection,
-    event: Event,
+    subs: []*const Player,
+    event: []const u8,
     data: anytype,
 ) !void {
     for (subs) |subscriber| {
-        try sendJson(allocator, subscriber, .{ .event = event, .data = data });
+        try sendJson(allocator, subscriber.conn, .{ .event = event, .data = data });
     }
 }
