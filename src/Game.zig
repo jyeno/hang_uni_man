@@ -48,7 +48,9 @@ pub fn guessLetter(self: *Game, player: *const Player, guessed: u8) !void {
     self.letters[self.guessed_count] = guessed;
     self.guessed_count += 1;
 
-    try utils.notifyEvent(self.allocator, self.players.keys(), "GameChanged", self.data());
+    utils.notifyEvent(self.allocator, self.players.keys(), "GameChanged", self.data()) catch |err| {
+        std.debug.print("error {} at guess_letter\n", .{err});
+    };
 }
 
 pub fn guessWord(self: *Game, player: *const Player, guessed: []const u8) !void {
@@ -65,10 +67,14 @@ pub fn guessWord(self: *Game, player: *const Player, guessed: []const u8) !void 
         }
 
         self.finished = true;
-        try utils.notifyEvent(self.allocator, self.players.keys(), "GameFinished", self.data());
+        utils.notifyEvent(self.allocator, self.players.keys(), "GameFinished", self.data()) catch |err| {
+            std.debug.print("error {} at guess_letter\n", .{err});
+        };
     } else {
         self.decrementPlayerLife();
-        try utils.notifyEvent(self.allocator, self.players.keys(), "GameChanged", self.data());
+        utils.notifyEvent(self.allocator, self.players.keys(), "GameChanged", self.data()) catch |err| {
+            std.debug.print("error {} at guess_letter\n", .{err});
+        };
     }
 }
 

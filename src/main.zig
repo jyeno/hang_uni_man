@@ -55,7 +55,20 @@ const Parameters = struct {
 };
 
 // TODO figure out how to add errors here
-const command_handles = std.ComptimeStringMap(fn (*Context, *const net.StreamServer.Connection, Parameters) void, .{
+const command_handles = std.ComptimeStringMap(fn (*Context, *const net.StreamServer.Connection, Parameters) error{
+    InvalidRequest,
+    InvalidPlay,
+    InvalidIndex,
+    InternalError,
+    PlayerNotFound,
+    PlayerOccupied,
+    PlayerNotInTheRoom,
+    RoomNotFound,
+    RoomFull,
+    UnauthorizedRequest,
+    GameNotFound,
+    LetterAlreadyGuessed,
+}!void, .{
     .{ "player", handlePlayerCommand },
     .{ "room", handleRoomCommand },
     .{ "game", handleGameCommand },
@@ -77,13 +90,12 @@ fn handleConn(conn: *const net.StreamServer.Connection, ctx: *Context) !void {
                 const first_arg = tokenizer.next().?;
                 const second_arg = tokenizer.next();
                 const third_arg = tokenizer.next();
-                // TODO read until \0
                 handleCommand(ctx, conn, .{
                     .action = action,
                     .first_arg = first_arg,
                     .second_arg = second_arg,
                     .third_arg = third_arg,
-                });
+                }) catch |err| try utils.sendJson(ctx.allocator, conn, .{ .@"error" = err });
             } else {
                 try utils.sendJson(ctx.allocator, conn, .{ .@"error" = error.InvalidCommand });
             }
@@ -91,11 +103,10 @@ fn handleConn(conn: *const net.StreamServer.Connection, ctx: *Context) !void {
     }
 }
 
-// TODO error handling
-fn handlePlayerCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) void {
+fn handlePlayerCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) !void {
     if (std.ascii.eqlIgnoreCase(params.action, "register")) {
         // add new user to user database
-        const player = ctx.createPlayer(params.first_arg, conn) catch return;
+        const player = ctx.createPlayer(params.first_arg, conn) catch return error.InternalError;
         const data = .{ .name = player.name, .uid = player.uid };
         utils.sendJson(ctx.allocator, conn, .{ .event = "PlayerCreated", .data = data }) catch return;
     } else if (std.ascii.eqlIgnoreCase(params.action, "logout")) {
@@ -106,76 +117,77 @@ fn handlePlayerCommand(ctx: *Context, conn: *const net.StreamServer.Connection, 
     }
 }
 
-fn handleRoomCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) void {
-    if (std.ascii.eqlIgnoreCase(params.action, "create")) {
-        const room_name = ctx.allocator.dupe(u8, params.first_arg) catch return;
-        const creator = ctx.getPlayer(params.second_arg.?).?;
-        const difficulty = params.third_arg.?;
-
-        var room = ctx.createRoom(room_name, creator, difficulty) catch return;
-        utils.sendJson(ctx.allocator, conn, .{ .event = "RoomCreated", .data = room.data() }) catch return;
-    } else if (std.ascii.eqlIgnoreCase(params.action, "list")) {
-        const rooms = ctx.listRooms() catch return;
+fn handleRoomCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) !void {
+    if (std.ascii.eqlIgnoreCase(params.action, "list")) { // special case, only needs the action
+        const rooms = ctx.listRooms() catch return error.InternalError;
         defer ctx.allocator.free(rooms);
 
-        utils.sendJson(ctx.allocator, conn, .{ .event = "RoomListChanged", .data = rooms }) catch return;
+        utils.sendJson(ctx.allocator, conn, .{ .event = "RoomListChanged", .data = rooms }) catch return error.InternalError;
+    }
+
+    if (params.second_arg == null) return error.InvalidRequest;
+
+    const player = ctx.getPlayer(params.second_arg.?) orelse return error.PlayerNotFound;
+
+    if (std.ascii.eqlIgnoreCase(params.action, "create")) {
+        const room_name = ctx.allocator.dupe(u8, params.first_arg) catch return error.InternalError;
+        errdefer ctx.allocator.free(room_name);
+
+        const difficulty = params.third_arg orelse return error.InvalidRequest;
+
+        var room = ctx.createRoom(room_name, player, difficulty) catch return;
+        utils.sendJson(ctx.allocator, conn, .{ .event = "RoomCreated", .data = room.data() }) catch return error.InternalError;
     } else {
         // actually, notify everyone in the room, TODO remove it
         if (ctx.getRoom(params.first_arg)) |room| {
             if (std.ascii.eqlIgnoreCase(params.action, "join")) {
-                const player = ctx.getPlayer(params.second_arg.?).?;
-                ctx.joinRoom(room, player) catch return;
+                try ctx.joinRoom(room, player);
             } else if (std.ascii.eqlIgnoreCase(params.action, "exit")) {
-                const player = ctx.getPlayer(params.second_arg.?).?;
-
-                ctx.exitRoom(room, player) catch |err| utils.sendJson(ctx.allocator, conn, .{ .@"error" = err }) catch return;
+                try ctx.exitRoom(room, player);
                 const data = .{ .success = true };
                 utils.sendJson(ctx.allocator, conn, .{ .event = "RoomExited", .data = data }) catch return;
             } else if (std.ascii.eqlIgnoreCase(params.action, "kick")) {
-                const player = ctx.getPlayer(params.second_arg.?).?;
-                const index = std.fmt.parseInt(u8, params.third_arg.?, 10) catch return;
+                const index_str = params.third_arg orelse return error.InvalidRequest;
+                const index = std.fmt.parseInt(u8, index_str, 10) catch return error.InvalidRequest;
 
-                ctx.kickPlayerRoom(room, player, index) catch return;
+                try ctx.kickPlayerRoom(room, player, index);
             } else if (std.ascii.eqlIgnoreCase(params.action, "start_game")) {
-                const player = ctx.getPlayer(params.second_arg.?).?;
-                ctx.startGame(room, player) catch return;
+                ctx.startGame(room, player) catch return error.InternalError;
             } else if (std.ascii.eqlIgnoreCase(params.action, "send_msg")) { // TODO fix, only fix word get sent, the rest is ignored
-                const player = ctx.getPlayer(params.second_arg.?).?;
-                ctx.roomSendMessage(room, player, params.third_arg.?) catch return;
+                ctx.roomSendMessage(room, player, params.third_arg.?);
+            } else {
+                return error.InvalidRequest;
             }
         } else {
-            utils.sendJson(ctx.allocator, conn, .{ .@"error" = error.RoomNotFound }) catch return;
+            return error.RoomNotFound;
         }
     }
 }
 
-fn handleGameCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) void {
+fn handleGameCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) !void {
+    _ = conn;
     if (ctx.getGame(params.first_arg)) |game| {
+        if (params.second_arg == null or params.third_arg == null) return error.InvalidRequest;
+        const player = ctx.getPlayer(params.second_arg.?) orelse return error.PlayerNotFound;
+
         if (std.ascii.eqlIgnoreCase(params.action, "guess_letter")) {
-            const player = ctx.getPlayer(params.second_arg.?).?;
             const letter = params.third_arg.?[0];
-            game.guessLetter(player, std.ascii.toUpper(letter)) catch |err| std.debug.print("error {}\n", .{err});
+            try game.guessLetter(player, std.ascii.toUpper(letter));
             ctx.checkGameEnded(game);
         } else if (std.ascii.eqlIgnoreCase(params.action, "guess_word")) {
-            const player = ctx.getPlayer(params.second_arg.?).?;
-            game.guessWord(player, params.third_arg.?) catch return;
+            try game.guessWord(player, params.third_arg.?);
             ctx.checkGameEnded(game);
         } else if (std.ascii.eqlIgnoreCase(params.action, "exit")) {
             // TODO
+            // utils.sendJson(ctx.allocator, conn, .{ .@"error" = error.RoomNotFound }) catch return;
         }
         // TODO consider a exit
     } else {
-        utils.sendJson(ctx.allocator, conn, .{ .@"error" = error.RoomNotFound }) catch return;
+        return error.GameNotFound;
     }
 }
-// TODO some way to validate user (password maybe)
+
 // TODO time limit per play, if player passes the time limit then his play is skipped, 3 times mean that player is no more
 // TODO save to sqlite3
 // TODO maybe check if it is on any rooms/matches and remove accordingly
 // TODO close room and notify all when creator gives up
-//
-// TODO have { "event" : "something", data: {...} } returns, to help situate the client on what happened
-//
-//
-// Events:
-//   PlayerLogged

@@ -28,7 +28,6 @@ pub fn sendJson(
 
     try std.json.stringify(data, .{}, list.writer());
 
-    std.debug.print("connection: {}\n", .{conn});
     _ = try conn.stream.write(list.items);
 }
 

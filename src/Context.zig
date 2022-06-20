@@ -93,7 +93,7 @@ pub fn joinRoom(self: *Context, room: *Room, player: *const Player) !void {
     if (self.isPlayerOccupied(player)) return error.PlayerOccupied;
 
     try room.addPlayer(player);
-    try self.roomChanged(room);
+    self.roomChanged(room);
 }
 
 pub fn exitRoom(self: *Context, room: *Room, player: *const Player) !void {
@@ -106,14 +106,14 @@ pub fn exitRoom(self: *Context, room: *Room, player: *const Player) !void {
         return error.PlayerNotInTheRoom;
     };
     try room.removePlayer(player, index);
-    try self.roomChanged(room);
+    self.roomChanged(room);
 }
 
 pub fn kickPlayerRoom(self: *Context, room: *Room, requester: *const Player, player_index: usize) !void {
     if (player_index >= room.player_count) return error.InvalidIndex;
 
     try room.removePlayer(requester, player_index);
-    try self.roomChanged(room);
+    self.roomChanged(room);
 }
 
 pub fn getRoom(self: *Context, room_uid: []const u8) ?*Room {
@@ -158,24 +158,28 @@ pub fn listRooms(self: *Context) ![]const DisplayRoom {
     return list.toOwnedSlice();
 }
 
-pub fn roomSendMessage(self: *Context, room: *Room, player: *const Player, message: []const u8) !void {
+pub fn roomSendMessage(self: *Context, room: *Room, player: *const Player, message: []const u8) void {
     var room_players: [6]*const Player = .{ undefined, undefined, undefined, undefined, undefined, undefined };
     for (room.players[0..room.player_count]) |p, i| {
         std.debug.print("player: {}\n", .{p});
         room_players[i] = p.?;
     }
     room_players[room.player_count] = room.creator;
-    try utils.notifyEvent(self.allocator, room_players[0 .. room.player_count + 1], "RoomMessageReceived", .{ .owner = player.name, .message = message });
+    utils.notifyEvent(self.allocator, room_players[0 .. room.player_count + 1], "RoomMessageReceived", .{ .owner = player.name, .message = message }) catch |err| {
+        std.debug.print("error {} at room_send_message\n", .{err});
+    };
 }
 
-fn roomChanged(self: *Context, room: *Room) !void {
+fn roomChanged(self: *Context, room: *Room) void {
     var room_players: [6]*const Player = .{ undefined, undefined, undefined, undefined, undefined, undefined };
     for (room.players[0..room.player_count]) |p, i| {
         std.debug.print("player: {}\n", .{p});
         room_players[i] = p.?;
     }
     room_players[room.player_count] = room.creator;
-    try utils.notifyEvent(self.allocator, room_players[0 .. room.player_count + 1], "RoomChanged", room.data());
+    utils.notifyEvent(self.allocator, room_players[0 .. room.player_count + 1], "RoomChanged", room.data()) catch |err| {
+        std.debug.print("error {} at room_changed\n", .{err});
+    };
 }
 
 pub fn startGame(self: *Context, room: *Room, requester: *const Player) !void {
