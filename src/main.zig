@@ -63,6 +63,7 @@ const command_handles = std.ComptimeStringMap(fn (*Context, *const net.StreamSer
     PlayerNotFound,
     PlayerOccupied,
     PlayerNotInTheRoom,
+    PlayerNotInTheGame,
     RoomNotFound,
     RoomFull,
     UnauthorizedRequest,
@@ -123,6 +124,7 @@ fn handleRoomCommand(ctx: *Context, conn: *const net.StreamServer.Connection, pa
         defer ctx.allocator.free(rooms);
 
         utils.sendJson(ctx.allocator, conn, .{ .event = "RoomListChanged", .data = rooms }) catch return error.InternalError;
+        return;
     }
 
     if (params.second_arg == null) return error.InvalidRequest;
@@ -138,52 +140,54 @@ fn handleRoomCommand(ctx: *Context, conn: *const net.StreamServer.Connection, pa
         var room = ctx.createRoom(room_name, player, difficulty) catch return;
         utils.sendJson(ctx.allocator, conn, .{ .event = "RoomCreated", .data = room.data() }) catch return error.InternalError;
     } else {
-        // actually, notify everyone in the room, TODO remove it
-        if (ctx.getRoom(params.first_arg)) |room| {
-            if (std.ascii.eqlIgnoreCase(params.action, "join")) {
-                try ctx.joinRoom(room, player);
-            } else if (std.ascii.eqlIgnoreCase(params.action, "exit")) {
-                try ctx.exitRoom(room, player);
-                const data = .{ .success = true };
-                utils.sendJson(ctx.allocator, conn, .{ .event = "RoomExited", .data = data }) catch return;
-            } else if (std.ascii.eqlIgnoreCase(params.action, "kick")) {
-                const index_str = params.third_arg orelse return error.InvalidRequest;
-                const index = std.fmt.parseInt(u8, index_str, 10) catch return error.InvalidRequest;
+        const room = ctx.getRoom(params.first_arg) orelse return error.RoomNotFound;
 
-                try ctx.kickPlayerRoom(room, player, index);
-            } else if (std.ascii.eqlIgnoreCase(params.action, "start_game")) {
-                ctx.startGame(room, player) catch return error.InternalError;
-            } else if (std.ascii.eqlIgnoreCase(params.action, "send_msg")) { // TODO fix, only fix word get sent, the rest is ignored
-                ctx.roomSendMessage(room, player, params.third_arg.?);
-            } else {
-                return error.InvalidRequest;
-            }
+        if (std.ascii.eqlIgnoreCase(params.action, "join")) {
+            try ctx.joinRoom(room, player);
+        } else if (std.ascii.eqlIgnoreCase(params.action, "exit")) {
+            try ctx.exitRoom(room, player);
+            const data = .{ .success = true };
+            utils.sendJson(ctx.allocator, conn, .{ .event = "RoomExited", .data = data }) catch return;
+        } else if (std.ascii.eqlIgnoreCase(params.action, "kick")) {
+            const index_str = params.third_arg orelse return error.InvalidRequest;
+            const index = std.fmt.parseInt(u8, index_str, 10) catch return error.InvalidRequest;
+
+            try ctx.kickPlayerRoom(room, player, index);
+        } else if (std.ascii.eqlIgnoreCase(params.action, "start_game")) {
+            ctx.startGame(room, player) catch return error.InternalError;
+        } else if (std.ascii.eqlIgnoreCase(params.action, "send_msg")) { // TODO fix, only fix word get sent, the rest is ignored
+            ctx.roomSendMessage(room, player, params.third_arg.?);
         } else {
-            return error.RoomNotFound;
+            return error.InvalidRequest;
         }
     }
 }
 
 fn handleGameCommand(ctx: *Context, conn: *const net.StreamServer.Connection, params: Parameters) !void {
-    _ = conn;
-    if (ctx.getGame(params.first_arg)) |game| {
-        if (params.second_arg == null or params.third_arg == null) return error.InvalidRequest;
-        const player = ctx.getPlayer(params.second_arg.?) orelse return error.PlayerNotFound;
+    if (params.second_arg == null) return error.InvalidRequest;
 
-        if (std.ascii.eqlIgnoreCase(params.action, "guess_letter")) {
-            const letter = params.third_arg.?[0];
-            try game.guessLetter(player, std.ascii.toUpper(letter));
-            ctx.checkGameEnded(game);
-        } else if (std.ascii.eqlIgnoreCase(params.action, "guess_word")) {
-            try game.guessWord(player, params.third_arg.?);
-            ctx.checkGameEnded(game);
-        } else if (std.ascii.eqlIgnoreCase(params.action, "exit")) {
-            // TODO
-            // utils.sendJson(ctx.allocator, conn, .{ .@"error" = error.RoomNotFound }) catch return;
-        }
-        // TODO consider a exit
+    var game = ctx.getGame(params.first_arg) orelse return error.GameNotFound;
+    const player = ctx.getPlayer(params.second_arg.?) orelse return error.PlayerNotFound;
+
+    if (std.ascii.eqlIgnoreCase(params.action, "player_index")) {
+        const index_data = .{ .player_index = try game.playerIndex(player) };
+        utils.sendJson(ctx.allocator, conn, .{ .event = "PlayerIndexFound", .data = index_data }) catch return;
+    }
+
+    if (params.third_arg == null) return error.InvalidRequest;
+
+    if (std.ascii.eqlIgnoreCase(params.action, "guess_letter")) {
+        const letter = params.third_arg.?[0];
+        try game.guessLetter(player, std.ascii.toUpper(letter));
+        ctx.checkGameEnded(game);
+    } else if (std.ascii.eqlIgnoreCase(params.action, "guess_word")) {
+        try game.guessWord(player, params.third_arg.?);
+        ctx.checkGameEnded(game);
+    } else if (std.ascii.eqlIgnoreCase(params.action, "exit")) {
+        // TODO
+        // utils.sendJson(ctx.allocator, conn, .{ .@"error" = error.RoomNotFound }) catch return;
     } else {
-        return error.GameNotFound;
+        return error.InvalidRequest;
     }
 }
 

@@ -26,6 +26,7 @@ If player guess word wrong then he loses, if he guess it right he wins
  * `room kick room_uuid player_uuid player_index` creator can kick player at player_index
  * `room start_game room_uuid player_uuid` creator of the room starts a game, notify the players that the game started `game_uuid`
  * `game guess_letter game_uuid player_uuid L` player guess letter `L`, if successful continues to play, otherwise loses a life and another player gets his chance
+ * `game player_index game_uuid player_uuid` get `player_index` at given `game_uuid`
  * `game guess_word game_uuid player_uuid WORD` player guess the `WORD`, if successful player wins, otherwise loses all his tries and stays as spectator
 
  <!-- * `history`  returns the data of all games and its winners -->

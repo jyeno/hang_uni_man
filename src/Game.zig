@@ -78,6 +78,10 @@ pub fn guessWord(self: *Game, player: *const Player, guessed: []const u8) !void 
     }
 }
 
+pub fn playerIndex(self: *Game, player: *const Player) !usize {
+    return self.players.getIndex(player) orelse error.PlayerNotInTheGame;
+}
+
 fn decrementPlayerLife(self: *Game) void {
     var entry = self.players.unmanaged.entries.get(self.current_index);
     entry.value -= 1;
