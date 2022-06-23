@@ -26,9 +26,9 @@ pub fn sendJson(
     var list = std.ArrayList(u8).init(allocator);
     defer list.deinit();
 
-    try std.json.stringify(data, .{}, list.writer());
+    std.json.stringify(data, .{}, list.writer()) catch return error.InternalError;
 
-    _ = try conn.stream.write(list.items);
+    _ = conn.stream.write(list.items) catch return error.InternalError;
 }
 
 /// Notifies the address with `data` and Event

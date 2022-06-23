@@ -51,7 +51,31 @@ pub fn createPlayer(self: *Context, name: []const u8, conn: *const std.net.Strea
 pub fn delPlayer(self: *Context, player_uid: []const u8) bool {
     for (self.players.items) |*player, index| {
         if (std.mem.eql(u8, &player.uid, player_uid)) {
-            player.deinit(self.allocator);
+            defer player.deinit(self.allocator);
+            var room = blk: {
+                for (self.rooms.items) |*room| {
+                    if (room.creator == player) break :blk room;
+                    for (room.players) |room_player| {
+                        if (room_player == player) break :blk room;
+                    }
+                }
+                break :blk null;
+            };
+
+            // TODO fix, not right yet, it is not notification others of the changes
+            if (room) |_| {
+                self.exitRoom(room.?, player) catch {};
+            } else {
+                for (self.matches.items) |*match| {
+                    var iterator = match.players.iterator();
+                    while (iterator.next()) |entry| {
+                        if (entry.key_ptr.* == player and entry.value_ptr.* != 0) {
+                            match.removePlayer(player) catch {};
+                            break;
+                        }
+                    }
+                }
+            }
             _ = self.players.orderedRemove(index);
             return true;
         }
@@ -71,12 +95,10 @@ pub fn getPlayer(self: *Context, player_uid: []const u8) ?*Player {
 pub fn createRoom(self: *Context, name: []const u8, requester: *const Player, difficulty_str: []const u8) !Room {
     if (self.isPlayerOccupied(requester)) return error.PlayerOccupied;
 
-    if (Room.Difficulty.fromString(difficulty_str)) |difficulty| {
-        const room = Room.init(name, requester, difficulty);
-        try self.rooms.append(room);
-        return room;
-    }
-    return error.InvalidDifficulty;
+    const difficulty = try Room.Difficulty.fromString(difficulty_str);
+    const room = Room.init(name, requester, difficulty);
+    try self.rooms.append(room);
+    return room;
 }
 
 fn removeRoom(self: *Context, room: *Room) void {
@@ -93,27 +115,33 @@ pub fn joinRoom(self: *Context, room: *Room, player: *const Player) !void {
     if (self.isPlayerOccupied(player)) return error.PlayerOccupied;
 
     try room.addPlayer(player);
-    self.roomChanged(room);
+    try self.roomNotifyEvent(room, "RoomChanged", room.data(), .{ .ignore_owner = true });
 }
 
 pub fn exitRoom(self: *Context, room: *Room, player: *const Player) !void {
-    const index: usize = blk: {
-        for (room.players) |p, i| {
-            if (p == player) {
-                break :blk i;
+    if (room.creator == player) {
+        try self.roomNotifyEvent(room, "RoomDeleted", .{}, .{});
+        self.removeRoom(room);
+    } else {
+        const index: usize = blk: {
+            for (room.players) |p, i| {
+                if (p == player) {
+                    break :blk i;
+                }
             }
-        }
-        return error.PlayerNotInTheRoom;
-    };
-    try room.removePlayer(player, index);
-    self.roomChanged(room);
+            return error.PlayerNotInTheRoom;
+        };
+        try room.removePlayer(player, index);
+        try self.roomNotifyEvent(room, "RoomChanged", room.data(), .{});
+    }
 }
 
 pub fn kickPlayerRoom(self: *Context, room: *Room, requester: *const Player, player_index: usize) !void {
     if (player_index >= room.player_count) return error.InvalidIndex;
 
     try room.removePlayer(requester, player_index);
-    self.roomChanged(room);
+    // TODO notify kicked
+    try self.roomNotifyEvent(room, "RoomChanged", room.data(), .{});
 }
 
 pub fn getRoom(self: *Context, room_uid: []const u8) ?*Room {
@@ -132,6 +160,12 @@ fn isPlayerOccupied(self: *Context, player: *const Player) bool {
             if (room_player == player) return true;
         }
     }
+    for (self.matches.items) |match| {
+        var iterator = match.players.iterator();
+        while (iterator.next()) |entry| {
+            if (entry.key_ptr.* == player and entry.value_ptr.* != 0) return true;
+        }
+    }
     return false;
 }
 
@@ -143,7 +177,6 @@ const DisplayRoom = struct {
     current_count: usize,
 };
 
-// wants room name, uid, max_members, current_count, difficulty
 pub fn listRooms(self: *Context) ![]const DisplayRoom {
     var list = try std.ArrayList(DisplayRoom).initCapacity(self.allocator, self.rooms.items.len);
     for (self.rooms.items) |room| {
@@ -158,34 +191,27 @@ pub fn listRooms(self: *Context) ![]const DisplayRoom {
     return list.toOwnedSlice();
 }
 
-pub fn roomSendMessage(self: *Context, room: *Room, player: *const Player, message: []const u8) void {
-    var room_players: [6]*const Player = .{ undefined, undefined, undefined, undefined, undefined, undefined };
-    for (room.players[0..room.player_count]) |p, i| {
-        std.debug.print("player: {}\n", .{p});
-        room_players[i] = p.?;
-    }
-    room_players[room.player_count] = room.creator;
-    utils.notifyEvent(self.allocator, room_players[0 .. room.player_count + 1], "RoomMessageReceived", .{ .owner = player.name, .message = message }) catch |err| {
-        std.debug.print("error {} at room_send_message\n", .{err});
-    };
-}
+const NotifyConfig = struct {
+    ignore_owner: bool = false,
+};
 
-fn roomChanged(self: *Context, room: *Room) void {
+pub fn roomNotifyEvent(self: *Context, room: *Room, event: []const u8, data: anytype, notify_config: NotifyConfig) !void {
     var room_players: [6]*const Player = .{ undefined, undefined, undefined, undefined, undefined, undefined };
     for (room.players[0..room.player_count]) |p, i| {
-        std.debug.print("player: {}\n", .{p});
         room_players[i] = p.?;
     }
-    room_players[room.player_count] = room.creator;
-    utils.notifyEvent(self.allocator, room_players[0 .. room.player_count + 1], "RoomChanged", room.data()) catch |err| {
-        std.debug.print("error {} at room_changed\n", .{err});
-    };
+    var notify_count = room.player_count;
+    if (notify_config.ignore_owner) {
+        room_players[notify_count] = room.creator;
+        notify_count += 1;
+    }
+    try utils.notifyEvent(self.allocator, room_players[0..notify_count], event, data);
 }
 
 pub fn startGame(self: *Context, room: *Room, requester: *const Player) !void {
     if (room.creator != requester) return error.UnathorizedRequest;
 
-    const life_amount = 5;
+    const life_amount = @enumToInt(room.difficulty);
     var members_game = try std.ArrayList(*const Player).initCapacity(self.allocator, room.player_count + 1);
     defer members_game.deinit();
 
@@ -204,8 +230,16 @@ pub fn startGame(self: *Context, room: *Room, requester: *const Player) !void {
 
 pub fn checkGameEnded(self: *Context, game: *Game) void {
     // TODO history somehow here
-    if (game.finished or game.players.count() == 0) {
-        game.deinit();
+    const game_ended = blk: {
+        var iterator = game.players.iterator();
+        while (iterator.next()) |entry| {
+            if (entry.value_ptr.* > 0) break :blk game.finished;
+        }
+        // if none of the entries have a value bigger than 0 none of the players have won
+        break :blk true;
+    };
+    if (game_ended) {
+        defer game.deinit();
 
         for (self.matches.items) |*g, index| {
             if (g == game) {

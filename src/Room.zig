@@ -11,25 +11,24 @@ pub const Difficulty = enum(u8) {
     EASY = 7,
 
     pub fn toString(self: Difficulty) []const u8 {
-        if (self == .EASY) {
-            return "Facil";
-        } else if (self == .MEDIUM) {
-            return "Medio";
-        } else if (self == .HARD) {
-            return "Dificil";
-        } else unreachable;
+        return switch (self) {
+            .EASY => "Facil",
+            .MEDIUM => "Medio",
+            .HARD => "Dificil",
+        };
     }
 
-    pub fn fromString(str: []const u8) ?Difficulty {
+    pub fn fromString(str: []const u8) !Difficulty {
         if (std.mem.eql(u8, str, "facil")) {
             return .EASY;
         } else if (std.mem.eql(u8, str, "medio")) {
             return .MEDIUM;
         } else if (std.mem.eql(u8, str, "dificil")) {
             return .HARD;
-        } else return null;
+        } else return error.InvalidDifficulty;
     }
 };
+
 const Room = @This();
 
 name: []const u8,
@@ -63,9 +62,13 @@ pub fn addPlayer(self: *Room, player: *const Player) !void {
 }
 
 pub fn removePlayer(self: *Room, requester: *const Player, player_index: usize) !void {
-    if (player_index > self.player_count) return error.InvalidIndex;
+    if (player_index >= self.player_count) return error.InvalidIndex;
     if (requester == self.creator or requester == self.players[player_index]) {
-        _ = player_index;
+        self.players[player_index] = null;
+        for (self.players[player_index..self.player_count]) |_, i| {
+            std.debug.print("swap a: {s}  b: {s}\n", .{ self.players[i].?.name, self.players[i + 1].?.name });
+            std.mem.swap(?*const Player, &self.players[i], &self.players[i + 1]);
+        }
         // swap until end
         // TODO analise usage of stdlib std.mem.swap
         self.player_count -= 1;
