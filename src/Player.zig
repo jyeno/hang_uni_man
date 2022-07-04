@@ -16,5 +16,4 @@ pub fn init(name: []const u8, conn: *const std.net.StreamServer.Connection) Play
 
 pub fn deinit(self: *Player, allocator: std.mem.Allocator) void {
     allocator.free(self.name);
-    self.conn.stream.close();
 }

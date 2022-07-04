@@ -66,11 +66,8 @@ pub fn removePlayer(self: *Room, requester: *const Player, player_index: usize) 
     if (requester == self.creator or requester == self.players[player_index]) {
         self.players[player_index] = null;
         for (self.players[player_index..self.player_count]) |_, i| {
-            std.debug.print("swap a: {s}  b: {s}\n", .{ self.players[i].?.name, self.players[i + 1].?.name });
             std.mem.swap(?*const Player, &self.players[i], &self.players[i + 1]);
         }
-        // swap until end
-        // TODO analise usage of stdlib std.mem.swap
         self.player_count -= 1;
     } else {
         return error.UnauthorizedRequest;

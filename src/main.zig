@@ -54,7 +54,6 @@ const Parameters = struct {
     third_arg: ?[]const u8,
 };
 
-// TODO figure out how to add errors here
 const command_handles = std.ComptimeStringMap(fn (*Context, *const net.StreamServer.Connection, Parameters) error{
     InvalidDifficulty,
     InvalidRequest,
@@ -158,7 +157,7 @@ fn handleRoomCommand(ctx: *Context, conn: *const net.StreamServer.Connection, pa
             try ctx.kickPlayerRoom(room, player, index);
         } else if (std.ascii.eqlIgnoreCase(params.action, "start_game")) {
             ctx.startGame(room, player) catch return error.InternalError;
-        } else if (std.ascii.eqlIgnoreCase(params.action, "send_msg")) { // TODO fix, only fix word get sent, the rest is ignored
+        } else if (std.ascii.eqlIgnoreCase(params.action, "send_msg")) {
             try ctx.roomNotifyEvent(room, "RoomMessageReceived", .{ .owner = player.name, .message = params.third_arg.? }, .{});
         } else {
             return error.InvalidRequest;
@@ -191,9 +190,3 @@ fn handleGameCommand(ctx: *Context, conn: *const net.StreamServer.Connection, pa
     }
     ctx.checkGameEnded(game);
 }
-
-// TODO time limit per play, if player passes the time limit then his play is skipped, 3 times mean that player is no more
-// TODO save to sqlite3
-// TODO maybe check if it is on any rooms/matches and remove accordingly
-// TODO close room and notify all when creator gives up
-// TODO check exitRoom, when creator exists it, then it should also remove room, the player can only be at one room/game per time

@@ -4,11 +4,6 @@ const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 
 pub const uid_size = 16;
 
-pub const Event = enum {
-    // WordGuessed,
-    GameFinished,
-};
-
 pub fn genUID(buffer: *[uid_size]u8) void {
     var rng = std.rand.DefaultPrng.init(@bitCast(u64, std.time.timestamp()));
     var i: u8 = 0;
@@ -17,7 +12,6 @@ pub fn genUID(buffer: *[uid_size]u8) void {
     }
 }
 
-// TODO use mix of allocator and stack
 pub fn sendJson(
     allocator: std.mem.Allocator,
     conn: *const std.net.StreamServer.Connection,
@@ -39,6 +33,6 @@ pub fn notifyEvent(
     data: anytype,
 ) !void {
     for (subs) |subscriber| {
-        try sendJson(allocator, subscriber.conn, .{ .event = event, .data = data });
+        sendJson(allocator, subscriber.conn, .{ .event = event, .data = data }) catch {}; // ignore error, as it could lead to others players not being notified
     }
 }

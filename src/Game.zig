@@ -5,7 +5,6 @@ const utils = @import("utils.zig");
 const Game = @This();
 
 uid: [utils.uid_size]u8,
-// TODO figure out how to use it with index, maybe use getIndex and/or make use of current_index
 players: std.AutoArrayHashMap(*const Player, u8),
 // current player index
 current_index: u8 = 0,
@@ -18,7 +17,6 @@ allocator: std.mem.Allocator,
 finished: bool = false,
 
 pub fn init(allocator: std.mem.Allocator, word: []const u8, players: []*const Player, life_amount: u8) !Game {
-    // TODO random player to start
     var uid = std.mem.zeroes([utils.uid_size]u8);
     utils.genUID(&uid);
 
@@ -177,6 +175,3 @@ fn notifyChanged(self: *Game) void {
         std.debug.print("error {} game_changed\n", .{err});
     };
 }
-// TODO
-// Think event for winner at guess_letter
-// maybe proibith last letter

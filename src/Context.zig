@@ -18,7 +18,6 @@ const wordlist = blk: {
 };
 
 const Context = @This();
-// TODO have list of words in a file and append it here, also separate it into lines and make a list of those
 
 allocator: std.mem.Allocator,
 players: std.ArrayList(Player),
@@ -62,7 +61,6 @@ pub fn delPlayer(self: *Context, player_uid: []const u8) bool {
                 break :blk null;
             };
 
-            // TODO fix, not right yet, it is not notification others of the changes
             if (room) |_| {
                 self.exitRoom(room.?, player) catch {};
             } else {
@@ -140,7 +138,6 @@ pub fn kickPlayerRoom(self: *Context, room: *Room, requester: *const Player, pla
     if (player_index >= room.player_count) return error.InvalidIndex;
 
     try room.removePlayer(requester, player_index);
-    // TODO notify kicked
     try self.roomNotifyEvent(room, "RoomChanged", room.data(), .{});
 }
 
@@ -229,7 +226,6 @@ pub fn startGame(self: *Context, room: *Room, requester: *const Player) !void {
 }
 
 pub fn checkGameEnded(self: *Context, game: *Game) void {
-    // TODO history somehow here
     const game_ended = blk: {
         var iterator = game.players.iterator();
         while (iterator.next()) |entry| {
